@@ -1,8 +1,8 @@
 {-# LANGUAGE Arrows, OverloadedStrings #-}
 
-module BlobListParser where
+module Azure.BlobListParser where
 
-import BlobDataTypes
+import Azure.BlobDataTypes
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
@@ -15,10 +15,10 @@ getBlobs = deep (hasName "Blob")
 
 xmlBlob :: (ArrowXml a) => a XmlTree Blob
 xmlBlob = proc tag -> do
-    name <- (getText <<< getChildren <<< deep (hasName "Name")) -< tag 
-    url <- (getText <<< getChildren <<< deep (hasName "Url")) -< tag 
+    name <- (getText <<< getChildren <<< deep (hasName "Name")) -< tag
+    url <- (getText <<< getChildren <<< deep (hasName "Url")) -< tag
     lastMod <- (getText <<< getChildren <<< deep (hasName "Last-Modified")) -< tag
-    etag <- (getText <<< getChildren <<< deep (hasName "Etag")) `orElse` (constA "") -< tag  
+    etag <- (getText <<< getChildren <<< deep (hasName "Etag")) `orElse` (constA "") -< tag
     contentLen <- (getText <<< getChildren <<< deep (hasName "Content-Length")) -< tag
     contentType <- (getText <<< getChildren <<< deep (hasName "Content-Type")) `orElse` (constA "") -< tag
     contentEnc <- (getText <<< getChildren <<< deep (hasName "Content-Encoding")) `orElse` (constA "") -< tag

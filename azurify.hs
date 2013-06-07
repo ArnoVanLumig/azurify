@@ -13,7 +13,7 @@ import System.Directory(getCurrentDirectory)
 data Commands = UploadBlob { uploadBlobPath :: String
                            , uploadBlobStorageName :: String
                            , uploadBlobContainerName :: String
-                           , uploadBlobFileName :: String 
+                           , uploadBlobFileName :: String
                            , uploadBlobContentType :: Maybe String
                            , uploadBlobContentEncoding :: Maybe String
                            , uploadBlobContentLanguage :: Maybe String
@@ -21,7 +21,7 @@ data Commands = UploadBlob { uploadBlobPath :: String
                            }
               | DeleteBlob { deleteBlobStorageName :: String
                            , deleteBlobContainerName :: String
-                           , deleteBlobBlobName :: String 
+                           , deleteBlobBlobName :: String
                            }
               | DownloadBlob { downloadBlobStorageName :: String
                              , downloadBlobContainerName :: String
@@ -44,7 +44,7 @@ data Commands = UploadBlob { uploadBlobPath :: String
                                }
               deriving (Show, Data, Typeable, Eq)
 
-uploadBlob = UploadBlob { uploadBlobPath          = def &= typ "file" &= argPos 0 
+uploadBlob = UploadBlob { uploadBlobPath          = def &= typ "file" &= argPos 0
                         , uploadBlobStorageName   = def &= typ "accountname" &= argPos 1
                         , uploadBlobContainerName = def &= typ "containername" &= argPos 2
                         , uploadBlobFileName      = def &= typ "blobname" &= argPos 3
@@ -93,9 +93,9 @@ main = do
     case m of
         UploadBlob path account container name contType contEnc contLang contCache -> do
             contents <- B.readFile path
-            res <- Az.createBlob (B8.pack account) 
+            res <- Az.createBlob (B8.pack account)
                                  azureKey (B8.pack container)
-                                 (Az.BlobSettings (B8.pack name) 
+                                 (Az.BlobSettings (B8.pack name)
                                                   (B8.pack `fmap` contType)
                                                   (B8.pack `fmap` contEnc)
                                                   (B8.pack `fmap` contLang)

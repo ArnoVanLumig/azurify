@@ -1,5 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-|
+    Azurify is an incomplete yet sort-of-functional library and command line client to access the Azure Blob Storage API
+
+    The following features are implemented:
+
+    * Creating and deleting containers
+
+    * Listing the contents of a container
+
+    * Downloading blobs
+
+    * Uploading a new block blob if it's no larger than 64MB
+
+    * Deleting a blob
+
+    * Breaking a blob lease
+-}
 module Azure ( createContainer
              , deleteContainer
              , listContainer
@@ -8,10 +25,10 @@ module Azure ( createContainer
              , deleteBlob
              , getBlob
              , breakLease
-             , module BlobDataTypes) where
+             , module Azure.BlobDataTypes) where
 
-import BlobDataTypes
-import BlobListParser
+import Azure.BlobDataTypes
+import Azure.BlobListParser
 
 import Network.HTTP.Conduit
 import Network.HTTP.Date
@@ -47,7 +64,12 @@ maybeResponseError rsp = let status = (responseStatus rsp) in
                then Just (statusCode status, responseBody rsp)
                else Nothing
 
-createContainer :: B.ByteString -> B.ByteString -> B.ByteString -> AccessControl -> IO (Maybe (Int, L.ByteString))
+-- |Create a new container
+createContainer :: B.ByteString -- ^ The account name
+                -> B.ByteString -- ^ Authorisation key
+                -> B.ByteString -- ^ Container name
+                -> AccessControl -- ^ Access control of the container
+                -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when creating was successful, otherwise HTTP status and content
 createContainer account authKey containerName accessControl = do
     let resource = "/" +++ containerName
     rsp <- doRequest account authKey resource [("restype", "container")] "PUT" "" hdrs
@@ -57,13 +79,21 @@ createContainer account authKey containerName accessControl = do
                     BlobPublic -> [("x-ms-blob-public-access", "blob")]
                     Private -> []
 
-deleteContainer :: B.ByteString -> B.ByteString -> B.ByteString -> IO (Maybe (Int, L.ByteString))
+-- |Delete a container
+deleteContainer :: B.ByteString -- ^ The account name
+                -> B.ByteString -- ^ Authorisation key
+                -> B.ByteString -- ^ Container name
+                -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when creating was successful, otherwise HTTP status and content
 deleteContainer account authKey containerName = do
     let resource = "/" +++ containerName
     rsp <- doRequest account authKey resource [("restype", "container")] "DELETE" "" []
     return $ maybeResponseError rsp
 
-listContainer :: B.ByteString -> B.ByteString -> B.ByteString -> IO (Either (Int, L.ByteString) [Blob])
+-- |List all blobs in a given container
+listContainer :: B.ByteString -- ^ The account name
+              -> B.ByteString -- ^ Authorisation key
+              -> B.ByteString -- ^ Container name
+              -> IO (Either (Int, L.ByteString) [Blob]) -- ^ Either the HTTP error code and content OR a list of Blobs
 listContainer account authKey containerName = do
     let resource = "/" +++ containerName
     rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "list")] "GET" "" []
@@ -73,7 +103,12 @@ listContainer account authKey containerName = do
           blobs <- parse $ L8.unpack $ responseBody rsp
           return $ Right blobs
 
-changeContainerACL :: B.ByteString -> B.ByteString -> B.ByteString -> AccessControl -> IO (Maybe (Int, L.ByteString))
+-- |Set the access control on a container
+changeContainerACL :: B.ByteString -- ^ The account name
+                   -> B.ByteString -- ^ The authorisation key
+                   -> B.ByteString -- ^ Container name
+                   -> AccessControl -- ^ Access control specifier
+                   -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 changeContainerACL account authKey containerName accessControl = do
     let resource = "/" +++ containerName
     rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "acl")] "PUT" "" hdrs
@@ -83,7 +118,12 @@ changeContainerACL account authKey containerName accessControl = do
                     BlobPublic -> [("x-ms-blob-public-access", "blob")]
                     Private -> []
 
-createBlob :: B.ByteString -> B.ByteString -> B.ByteString -> BlobSettings -> IO (Maybe (Int, L.ByteString))
+-- |Upload a new blob to a container
+createBlob :: B.ByteString -- ^ The account name
+           -> B.ByteString -- ^ The authorisation key
+           -> B.ByteString -- ^ Container name
+           -> BlobSettings -- ^ The blob itself, note that Page blobs are *not supported*
+           -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 createBlob account authKey containerName blobSettings =
     case blobSettingsType blobSettings of
         BlockBlob -> createBlockBlob account authKey containerName blobSettings
@@ -94,7 +134,7 @@ createBlockBlob account authKey containerName blobSettings = do
     let resource = "/" +++ containerName +++ "/" +++ blobSettingsName blobSettings
     rsp <- doRequest account authKey resource [] "PUT" (fromJust $ blobSettingsContents blobSettings) hdrs
     return $ maybeResponseError rsp
-    where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a) 
+    where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
                 [ ("Content-Type", blobSettingsContentType blobSettings)
                 , ("Content-Encoding", blobSettingsContentEncoding blobSettings)
                 , ("Content-Language", blobSettingsContentLanguage blobSettings)
@@ -107,7 +147,7 @@ createPageBlob account authKey containerName blobSettings = do
     let resource = "/" +++ containerName +++ "/" +++ blobSettingsName blobSettings
     rsp <- doRequest account authKey resource [] "PUT" "" hdrs
     return $ maybeResponseError rsp
-    where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a) 
+    where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
                 [ ("Content-Type", blobSettingsContentType blobSettings)
                 , ("Content-Encoding", blobSettingsContentEncoding blobSettings)
                 , ("Content-Language", blobSettingsContentLanguage blobSettings)
@@ -117,13 +157,23 @@ createPageBlob account authKey containerName blobSettings = do
                 , ("x-ms-blob-content-length", Just $ B8.pack $ show $ B.length $ fromJust $ blobSettingsContents blobSettings)
                 ]
 
-deleteBlob :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString -> IO (Maybe (Int, L.ByteString))
+-- |Delete a blob from a container
+deleteBlob :: B.ByteString -- ^ The account name
+           -> B.ByteString -- ^ The authorsation key
+           -> B.ByteString -- ^ The container name
+           -> B.ByteString -- ^ The blob name
+           -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 deleteBlob account authKey containerName blobName = do
     let resource = "/" +++ containerName +++ "/" +++ blobName
     rsp <- doRequest account authKey resource [] "DELETE" "" [] -- TODO: Add support for snapshots
     return $ maybeResponseError rsp
 
-getBlob :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString -> IO (Either (Int, L.ByteString) L.ByteString)
+-- |Download a blob
+getBlob :: B.ByteString -- ^ The account name
+        -> B.ByteString -- ^ The authorisation key
+        -> B.ByteString -- ^ The container name
+        -> B.ByteString -- ^ The blob name
+        -> IO (Either (Int, L.ByteString) L.ByteString) -- ^ Nothing when successful, HTTP error code and content otherwise
 getBlob account authKey containerName blobName = do
     let resource = "/" +++ containerName +++ "/" +++ blobName
     rsp <- doRequest account authKey resource [] "GET" "" []
@@ -131,7 +181,12 @@ getBlob account authKey containerName blobName = do
       Just err -> Left err
       Nothing -> Right $ responseBody rsp
 
-breakLease :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString -> IO (Maybe (Int, L.ByteString))
+-- |Break a lease of a blob
+breakLease :: B.ByteString -- ^ The account name
+           -> B.ByteString -- ^ The authorisation key
+           -> B.ByteString -- ^ The container name
+           -> B.ByteString -- ^ The blob name
+           -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 breakLease account authKey containerName blobName = do
     let resource = "/" +++ containerName +++ "/" +++ blobName
     rsp <- doRequest account authKey resource [("comp", "lease")] "PUT" "" [("x-ms-lease-action", "break")]
@@ -143,7 +198,7 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
     withSocketsDo $ withManager $ \manager -> do
         initReq <- parseUrl $ B8.unpack ("http://" +++ account +++ ".blob.core.windows.net" +++ resource +++ encodeParams params)
         let headers = ("x-ms-version", "2011-08-18")
-                    : ("x-ms-date", now) 
+                    : ("x-ms-date", now)
                     : extraHeaders ++ requestHeaders initReq
         let signData = defaultSignData { verb = reqType
                                        , contentLength = if reqType `elem` ["PUT", "DELETE"] || not (B.null reqBody) then B8.pack $ show $ B.length reqBody else ""
