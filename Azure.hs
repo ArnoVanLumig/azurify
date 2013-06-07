@@ -42,11 +42,16 @@ import qualified Data.ByteString.Base64 as B64
 
 (+++) = B.append
 
+maybeResponseError rsp = let status = (responseStatus rsp) in
+    if statusCode status >= 300 || statusCode status < 200
+               then Just (statusCode status, responseBody rsp)
+               else Nothing
+
 createContainer :: B.ByteString -> B.ByteString -> B.ByteString -> AccessControl -> IO (Maybe (Int, L.ByteString))
 createContainer account authKey containerName accessControl = do
     let resource = "/" +++ containerName
-    Response status _ _ body <- doRequest account authKey resource [("restype", "container")] "PUT" "" hdrs
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [("restype", "container")] "PUT" "" hdrs
+    return $ maybeResponseError rsp
     where hdrs = case accessControl of
                     ContainerPublic -> [("x-ms-blob-public-access", "container")]
                     BlobPublic -> [("x-ms-blob-public-access", "blob")]
@@ -55,23 +60,24 @@ createContainer account authKey containerName accessControl = do
 deleteContainer :: B.ByteString -> B.ByteString -> B.ByteString -> IO (Maybe (Int, L.ByteString))
 deleteContainer account authKey containerName = do
     let resource = "/" +++ containerName
-    Response status _ _ body <- doRequest account authKey resource [("restype", "container")] "DELETE" "" []
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [("restype", "container")] "DELETE" "" []
+    return $ maybeResponseError rsp
 
 listContainer :: B.ByteString -> B.ByteString -> B.ByteString -> IO (Either (Int, L.ByteString) [Blob])
 listContainer account authKey containerName = do
     let resource = "/" +++ containerName
-    Response status _ _ body <- doRequest account authKey resource [("restype", "container"), ("comp", "list")] "GET" "" []
-    if statusCode status >= 300 || statusCode status < 200 then
-        return $ Left (statusCode status, body) else do
-            blobs <- parse $ L8.unpack body
-            return $ Right blobs
+    rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "list")] "GET" "" []
+    case maybeResponseError rsp of
+      Just err -> return $ Left err
+      Nothing -> do
+          blobs <- parse $ L8.unpack $ responseBody rsp
+          return $ Right blobs
 
 changeContainerACL :: B.ByteString -> B.ByteString -> B.ByteString -> AccessControl -> IO (Maybe (Int, L.ByteString))
 changeContainerACL account authKey containerName accessControl = do
     let resource = "/" +++ containerName
-    Response status _ _ body <- doRequest account authKey resource [("restype", "container"), ("comp", "acl")] "PUT" "" hdrs
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "acl")] "PUT" "" hdrs
+    return $ maybeResponseError rsp
     where hdrs = case accessControl of
                     ContainerPublic -> [("x-ms-blob-public-access", "container")]
                     BlobPublic -> [("x-ms-blob-public-access", "blob")]
@@ -86,8 +92,8 @@ createBlob account authKey containerName blobSettings =
 createBlockBlob :: B.ByteString -> B.ByteString -> B.ByteString -> BlobSettings -> IO (Maybe (Int, L.ByteString))
 createBlockBlob account authKey containerName blobSettings = do
     let resource = "/" +++ containerName +++ "/" +++ blobSettingsName blobSettings
-    Response status _ _ body <- doRequest account authKey resource [] "PUT" (fromJust $ blobSettingsContents blobSettings) hdrs
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [] "PUT" (fromJust $ blobSettingsContents blobSettings) hdrs
+    return $ maybeResponseError rsp
     where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a) 
                 [ ("Content-Type", blobSettingsContentType blobSettings)
                 , ("Content-Encoding", blobSettingsContentEncoding blobSettings)
@@ -99,8 +105,8 @@ createBlockBlob account authKey containerName blobSettings = do
 createPageBlob :: B.ByteString -> B.ByteString -> B.ByteString -> BlobSettings -> IO (Maybe (Int, L.ByteString))
 createPageBlob account authKey containerName blobSettings = do
     let resource = "/" +++ containerName +++ "/" +++ blobSettingsName blobSettings
-    Response status _ _ body <- doRequest account authKey resource [] "PUT" "" hdrs
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [] "PUT" "" hdrs
+    return $ maybeResponseError rsp
     where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a) 
                 [ ("Content-Type", blobSettingsContentType blobSettings)
                 , ("Content-Encoding", blobSettingsContentEncoding blobSettings)
@@ -114,20 +120,22 @@ createPageBlob account authKey containerName blobSettings = do
 deleteBlob :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString -> IO (Maybe (Int, L.ByteString))
 deleteBlob account authKey containerName blobName = do
     let resource = "/" +++ containerName +++ "/" +++ blobName
-    Response status _ _ body <- doRequest account authKey resource [] "DELETE" "" [] -- TODO: Add support for snapshots
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [] "DELETE" "" [] -- TODO: Add support for snapshots
+    return $ maybeResponseError rsp
 
 getBlob :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString -> IO (Either (Int, L.ByteString) L.ByteString)
 getBlob account authKey containerName blobName = do
     let resource = "/" +++ containerName +++ "/" +++ blobName
-    Response status _ _ body <- doRequest account authKey resource [] "GET" "" []
-    return $ if statusCode status >= 300 || statusCode status < 200 then Left (statusCode status, body) else Right body
+    rsp <- doRequest account authKey resource [] "GET" "" []
+    return $ case maybeResponseError rsp of
+      Just err -> Left err
+      Nothing -> Right $ responseBody rsp
 
 breakLease :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString -> IO (Maybe (Int, L.ByteString))
 breakLease account authKey containerName blobName = do
     let resource = "/" +++ containerName +++ "/" +++ blobName
-    Response status _ _ body <- doRequest account authKey resource [("comp", "lease")] "PUT" "" [("x-ms-lease-action", "break")]
-    return $ if statusCode status >= 300 || statusCode status < 200 then Just (statusCode status, body) else Nothing
+    rsp <- doRequest account authKey resource [("comp", "lease")] "PUT" "" [("x-ms-lease-action", "break")]
+    return $ maybeResponseError rsp
 
 doRequest :: B.ByteString -> B.ByteString -> B.ByteString -> [(B.ByteString, B.ByteString)] -> B.ByteString -> B.ByteString -> [Header] -> IO (Response L.ByteString)
 doRequest account authKey resource params reqType reqBody extraHeaders = do
@@ -145,7 +153,7 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
         let authHeader = ("Authorization", "SharedKey " +++ account +++ ":" +++ signature)
         let request = initReq { method = reqType
                               , requestHeaders = authHeader : headers
-                              , checkStatus = \_ _ -> Nothing -- don't throw an exception when a non-2xx error code is received
+                              , checkStatus = \_ _ _ -> Nothing -- don't throw an exception when a non-2xx error code is received
                               , requestBody = RequestBodyBS reqBody }
         httpLbs request manager
 
