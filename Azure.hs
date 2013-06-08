@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, CPP #-}
 
 {-|
     Azurify is an incomplete yet sort-of-functional library and command line client to access the Azure Blob Storage API
@@ -19,7 +19,9 @@
 -}
 module Azure ( createContainer
              , deleteContainer
+#ifndef NO_XML
              , listContainer
+#endif
              , changeContainerACL
              , createBlob
              , deleteBlob
@@ -28,22 +30,20 @@ module Azure ( createContainer
              , module Azure.BlobDataTypes) where
 
 import Azure.BlobDataTypes
+#ifndef NO_XML
 import Azure.BlobListParser
+#endif
 
 import Network.HTTP.Conduit
-import Network.HTTP.Date
 import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
 import System.Locale
 import Data.List
 import Data.Time
-import Data.Time.Clock.POSIX
 import Data.Char (isSpace)
 import Data.CaseInsensitive (foldedCase)
 import Data.Maybe (fromJust, isJust)
 import Network (withSocketsDo)
-
-import Data.Conduit
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
@@ -89,6 +89,7 @@ deleteContainer account authKey containerName = do
     rsp <- doRequest account authKey resource [("restype", "container")] "DELETE" "" []
     return $ maybeResponseError rsp
 
+#ifndef NO_XML
 -- |List all blobs in a given container
 listContainer :: B.ByteString -- ^ The account name
               -> B.ByteString -- ^ Authorisation key
@@ -102,6 +103,7 @@ listContainer account authKey containerName = do
       Nothing -> do
           blobs <- parse $ L8.unpack $ responseBody rsp
           return $ Right blobs
+#endif
 
 -- |Set the access control on a container
 changeContainerACL :: B.ByteString -- ^ The account name
@@ -125,37 +127,39 @@ createBlob :: B.ByteString -- ^ The account name
            -> BlobSettings -- ^ The blob itself, note that Page blobs are *not supported*
            -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 createBlob account authKey containerName blobSettings =
-    case blobSettingsType blobSettings of
-        BlockBlob -> createBlockBlob account authKey containerName blobSettings
-        PageBlob -> error "Page blob not implemented yet"
+    case blobSettings of
+      BlockBlobSettings name contents common ->
+        createBlockBlob name contents common
+      PageBlobSettings name contentLength common ->
+        createPageBlob name contentLength common
+  where
+    createBlockBlob :: B.ByteString -> B.ByteString -> CommonBlobSettings -> IO (Maybe (Int, L.ByteString))
+    createBlockBlob name content conf = do
+        let resource = "/" +++ containerName +++ "/" +++ name
+        rsp <- doRequest account authKey resource [] "PUT" content hdrs
+        return $ maybeResponseError rsp
+        where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
+                    [ ("Content-Type", blobSettingsContentType conf)
+                    , ("Content-Encoding", blobSettingsContentEncoding conf)
+                    , ("Content-Language", blobSettingsContentLanguage conf)
+                    , ("Content-MD5", blobSettingsContentMD5 conf)
+                    , ("Cache-Control", blobSettingsCacheControl conf)
+                    , ("x-ms-blob-type", Just "BlockBlob") ]
 
-createBlockBlob :: B.ByteString -> B.ByteString -> B.ByteString -> BlobSettings -> IO (Maybe (Int, L.ByteString))
-createBlockBlob account authKey containerName blobSettings = do
-    let resource = "/" +++ containerName +++ "/" +++ blobSettingsName blobSettings
-    rsp <- doRequest account authKey resource [] "PUT" (fromJust $ blobSettingsContents blobSettings) hdrs
-    return $ maybeResponseError rsp
-    where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
-                [ ("Content-Type", blobSettingsContentType blobSettings)
-                , ("Content-Encoding", blobSettingsContentEncoding blobSettings)
-                , ("Content-Language", blobSettingsContentLanguage blobSettings)
-                , ("Content-MD5", blobSettingsContentMD5 blobSettings)
-                , ("Cache-Control", blobSettingsCacheControl blobSettings)
-                , ("x-ms-blob-type", Just "BlockBlob") ]
-
-createPageBlob :: B.ByteString -> B.ByteString -> B.ByteString -> BlobSettings -> IO (Maybe (Int, L.ByteString))
-createPageBlob account authKey containerName blobSettings = do
-    let resource = "/" +++ containerName +++ "/" +++ blobSettingsName blobSettings
-    rsp <- doRequest account authKey resource [] "PUT" "" hdrs
-    return $ maybeResponseError rsp
-    where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
-                [ ("Content-Type", blobSettingsContentType blobSettings)
-                , ("Content-Encoding", blobSettingsContentEncoding blobSettings)
-                , ("Content-Language", blobSettingsContentLanguage blobSettings)
-                , ("Content-MD5", blobSettingsContentMD5 blobSettings)
-                , ("Cache-Control", blobSettingsCacheControl blobSettings)
-                , ("x-ms-blob-type", Just "PageBlob")
-                , ("x-ms-blob-content-length", Just $ B8.pack $ show $ B.length $ fromJust $ blobSettingsContents blobSettings)
-                ]
+    createPageBlob :: B.ByteString -> Integer -> CommonBlobSettings -> IO (Maybe (Int, L.ByteString))
+    createPageBlob name contentLength conf = do
+        let resource = "/" +++ containerName +++ "/" +++ name
+        rsp <- doRequest account authKey resource [] "PUT" "" hdrs
+        return $ maybeResponseError rsp
+        where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
+                    [ ("Content-Type", blobSettingsContentType conf)
+                    , ("Content-Encoding", blobSettingsContentEncoding conf)
+                    , ("Content-Language", blobSettingsContentLanguage conf)
+                    , ("Content-MD5", blobSettingsContentMD5 conf)
+                    , ("Cache-Control", blobSettingsCacheControl conf)
+                    , ("x-ms-blob-type", Just "PageBlob")
+                    , ("x-ms-blob-content-length", Just $ B8.pack $ show $ contentLength)
+                    ]
 
 -- |Delete a blob from a container
 deleteBlob :: B.ByteString -- ^ The account name

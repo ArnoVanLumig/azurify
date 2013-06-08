@@ -4,10 +4,10 @@ module Azure.BlobListParser where
 
 import Azure.BlobDataTypes
 
-import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
 import Text.XML.HXT.Core hiding (Blob)
 
+parse :: String -> IO [Blob]
 parse xml = runX (readString [] xml >>> getBlobs >>> xmlBlob)
 
 getBlobs :: (ArrowXml a) => a XmlTree XmlTree

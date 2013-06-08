@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings, CPP, DeriveDataTypeable #-}
 
 module Main where
 
@@ -69,21 +69,33 @@ breakBlobLease = BreakBlobLease { breakLeaseStorageName = def &= typ "accountnam
                                 , breakLeaseBlobName = def &= typ "blobname" &= argPos 2
                                 }
 
+#ifndef NO_XML
 listContainer = ListContainer { listContainerStorageName = def &= typ "accountname" &= argPos 0
                               , listContainerContainerName = def &= typ "containername" &= argPos 1
                               } &= help "List all blobs in a container"
+#endif
 
 createContainer = CreateContainer { createContainerStorageName = def &= typ "accountname" &= argPos 0
                                   , createContainerContainerName = def &= typ "containername" &= argPos 1
                                   , createContainerACL = def &= typ "blobpublic|containerpublic|private" &= argPos 2
                                   } &= help "Create a container with the specified access control"
 
+#ifndef NO_XML
 deleteContainer = DeleteContainer { deleteContainerStorageName = def &= typ "accountname" &= argPos 0
                                   , deleteContainerContainerName = def &= typ "containername" &= argPos 1
                                   , deleteContainerForce = def &= name "force"
                                   } &= help "Delete the container and all the blobs inside it"
+#endif
 
-mode = cmdArgsMode $ modes [uploadBlob, downloadBlob, deleteBlob, breakBlobLease, listContainer, createContainer, deleteContainer] &= help "Access the Azure blob storage" &= program "azurify" &= summary "Azurify v1.0"
+mode = cmdArgsMode $ modes [uploadBlob, downloadBlob, deleteBlob, breakBlobLease
+#ifndef NO_XML
+         , listContainer
+#endif
+         , createContainer
+#ifndef NO_XML
+         , deleteContainer
+#endif
+         ] &= help "Access the Azure blob storage" &= program "azurify" &= summary "Azurify v1.0"
 
 main :: IO ()
 main = do
@@ -93,18 +105,15 @@ main = do
     case m of
         UploadBlob path account container name contType contEnc contLang contCache -> do
             contents <- B.readFile path
-            res <- Az.createBlob (B8.pack account)
-                                 azureKey (B8.pack container)
-                                 (Az.BlobSettings (B8.pack name)
-                                                  (B8.pack `fmap` contType)
-                                                  (B8.pack `fmap` contEnc)
-                                                  (B8.pack `fmap` contLang)
-                                                  Nothing
-                                                  (B8.pack `fmap` contCache)
-                                                  Az.BlockBlob
-                                                  Nothing
-                                                  (Just contents)
-                                                  )
+            res <- Az.createBlob (B8.pack account) azureKey (B8.pack container) $
+                       Az.BlockBlobSettings (B8.pack name) contents $
+                         Az.BlobSettings
+                            (B8.pack `fmap` contType)
+                            (B8.pack `fmap` contEnc)
+                            (B8.pack `fmap` contLang)
+                            Nothing
+                            (B8.pack `fmap` contCache)
+                            []
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Nothing -> return ()
@@ -126,11 +135,13 @@ main = do
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 _ -> return ()
+#ifndef NO_XML
         ListContainer account container -> do -- TODO: output formatting
             res <- Az.listContainer (B8.pack account) azureKey (B8.pack container)
             case res of
                 Left (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Right blobs -> mapM_ print blobs
+#endif
         CreateContainer account container access -> do
             let acl = case access of {
                 Just "blobpublic" -> Az.BlobPublic;
@@ -143,6 +154,7 @@ main = do
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Nothing -> return ()
+#ifndef NO_XML
         DeleteContainer account container force -> do
             if force == (Just True) then do
                 res <- Az.listContainer (B8.pack account) azureKey (B8.pack container)
@@ -154,5 +166,4 @@ main = do
                     case res of
                         Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                         Nothing -> return ()
-
-
+#endif
