@@ -52,13 +52,12 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
 import qualified Data.ByteString.Lazy.UTF8 as LUTF8
 
+import Data.Monoid
 import Control.Arrow (second)
 import Control.Monad.IO.Class (liftIO)
 
 import Data.Digest.Pure.SHA (hmacSha256, bytestringDigest)
 import qualified Data.ByteString.Base64 as B64
-
-(+++) = B.append
 
 maybeResponseError rsp = let status = (responseStatus rsp) in
     if statusCode status >= 300 || statusCode status < 200
@@ -72,7 +71,7 @@ createContainer :: B.ByteString -- ^ The account name
                 -> AccessControl -- ^ Access control of the container
                 -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when creating was successful, otherwise HTTP status and content
 createContainer account authKey containerName accessControl = do
-    let resource = "/" +++ containerName
+    let resource = "/" <> containerName
     rsp <- doRequest account authKey resource [("restype", "container")] "PUT" "" hdrs
     return $ maybeResponseError rsp
     where hdrs = case accessControl of
@@ -86,7 +85,7 @@ deleteContainer :: B.ByteString -- ^ The account name
                 -> B.ByteString -- ^ Container name
                 -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when creating was successful, otherwise HTTP status and content
 deleteContainer account authKey containerName = do
-    let resource = "/" +++ containerName
+    let resource = "/" <> containerName
     rsp <- doRequest account authKey resource [("restype", "container")] "DELETE" "" []
     return $ maybeResponseError rsp
 
@@ -96,7 +95,7 @@ listContainerRaw :: B.ByteString -- ^ The account name
               -> B.ByteString -- ^ Container name
               -> IO (Either (Int, L.ByteString) L.ByteString) -- ^ Either the HTTP error code and content OR a list of Blobs
 listContainerRaw account authKey containerName = do
-    let resource = "/" +++ containerName
+    let resource = "/" <> containerName
     rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "list")] "GET" "" []
     case maybeResponseError rsp of
       Just err -> return $ Left err
@@ -122,7 +121,7 @@ changeContainerACL :: B.ByteString -- ^ The account name
                    -> AccessControl -- ^ Access control specifier
                    -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 changeContainerACL account authKey containerName accessControl = do
-    let resource = "/" +++ containerName
+    let resource = "/" <> containerName
     rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "acl")] "PUT" "" hdrs
     return $ maybeResponseError rsp
     where hdrs = case accessControl of
@@ -145,7 +144,7 @@ createBlob account authKey containerName blobSettings =
   where
     createBlockBlob :: B.ByteString -> B.ByteString -> CommonBlobSettings -> IO (Maybe (Int, L.ByteString))
     createBlockBlob name content conf = do
-        let resource = "/" +++ containerName +++ "/" +++ name
+        let resource = "/" <> containerName <> "/" <> name
         rsp <- doRequest account authKey resource [] "PUT" content hdrs
         return $ maybeResponseError rsp
         where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
@@ -158,7 +157,7 @@ createBlob account authKey containerName blobSettings =
 
     createPageBlob :: B.ByteString -> Integer -> CommonBlobSettings -> IO (Maybe (Int, L.ByteString))
     createPageBlob name contentLength conf = do
-        let resource = "/" +++ containerName +++ "/" +++ name
+        let resource = "/" <> containerName <> "/" <> name
         rsp <- doRequest account authKey resource [] "PUT" "" hdrs
         return $ maybeResponseError rsp
         where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
@@ -178,7 +177,7 @@ deleteBlob :: B.ByteString -- ^ The account name
            -> B.ByteString -- ^ The blob name
            -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 deleteBlob account authKey containerName blobName = do
-    let resource = "/" +++ containerName +++ "/" +++ blobName
+    let resource = "/" <> containerName <> "/" <> blobName
     rsp <- doRequest account authKey resource [] "DELETE" "" [] -- TODO: Add support for snapshots
     return $ maybeResponseError rsp
 
@@ -189,7 +188,7 @@ getBlob :: B.ByteString -- ^ The account name
         -> B.ByteString -- ^ The blob name
         -> IO (Either (Int, L.ByteString) L.ByteString) -- ^ Nothing when successful, HTTP error code and content otherwise
 getBlob account authKey containerName blobName = do
-    let resource = "/" +++ containerName +++ "/" +++ blobName
+    let resource = "/" <> containerName <> "/" <> blobName
     rsp <- doRequest account authKey resource [] "GET" "" []
     return $ case maybeResponseError rsp of
       Just err -> Left err
@@ -202,7 +201,7 @@ breakLease :: B.ByteString -- ^ The account name
            -> B.ByteString -- ^ The blob name
            -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 breakLease account authKey containerName blobName = do
-    let resource = "/" +++ containerName +++ "/" +++ blobName
+    let resource = "/" <> containerName <> "/" <> blobName
     rsp <- doRequest account authKey resource [("comp", "lease")] "PUT" "" [("x-ms-lease-action", "break")]
     return $ maybeResponseError rsp
 
@@ -210,7 +209,7 @@ doRequest :: B.ByteString -> B.ByteString -> B.ByteString -> [(B.ByteString, B.B
 doRequest account authKey resource params reqType reqBody extraHeaders = do
     now <- liftIO httpTime
     withSocketsDo $ withManager $ \manager -> do
-        initReq <- parseUrl $ B8.unpack ("http://" +++ account +++ ".blob.core.windows.net" +++ resource +++ encodeParams params)
+        initReq <- parseUrl $ B8.unpack ("http://" <> account <> ".blob.core.windows.net" <> resource <> encodeParams params)
         let headers = ("x-ms-version", "2011-08-18")
                     : ("x-ms-date", now)
                     : extraHeaders ++ requestHeaders initReq
@@ -219,7 +218,7 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
                                        , canonicalizedHeaders = canonicalizeHeaders headers
                                        , canonicalizedResource = canonicalizeResource account resource params }
         let signature = sign authKey signData
-        let authHeader = ("Authorization", "SharedKey " +++ account +++ ":" +++ signature)
+        let authHeader = ("Authorization", "SharedKey " <> account <> ":" <> signature)
         let request = initReq { method = reqType
                               , requestHeaders = authHeader : headers
                               , checkStatus = \_ _ _ -> Nothing -- don't throw an exception when a non-2xx error code is received
@@ -228,19 +227,19 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
 
 encodeParams :: [(B.ByteString, B.ByteString)] -> B.ByteString
 encodeParams [] = ""
-encodeParams ((k,v):ps) = "?" +++ k +++ "=" +++ v +++ encodeRest ps
-    where encodeRest = B.concat . map (\(k,v) -> "&" +++ k +++ "=" +++ v)
+encodeParams ((k,v):ps) = "?" <> k <> "=" <> v <> encodeRest ps
+    where encodeRest = B.concat . map (\(k,v) -> "&" <> k <> "=" <> v)
 
 canonicalizeHeaders :: [Header] -> B.ByteString
 canonicalizeHeaders headers = B.intercalate "\n" unfoldHeaders
-    where headerStrs = map (\(a, b) -> strip $ foldedCase a +++ ":" +++ strip b) headers
+    where headerStrs = map (\(a, b) -> strip $ foldedCase a <> ":" <> strip b) headers
           xmsHeaders = filter (\hdr ->  "x-ms" `B.isPrefixOf` hdr) headerStrs
           sortedHeaders = sort xmsHeaders
           unfoldHeaders = map (B8.pack . unwords . words . B8.unpack) sortedHeaders
 
 canonicalizeResource :: B.ByteString -> B.ByteString -> [(B.ByteString, B.ByteString)] -> B.ByteString
-canonicalizeResource accountName uriPath params = "/" +++ accountName +++ uriPath +++ "\n" +++ canonParams
-    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> k +++ ":" +++ v) $ sortBy (\(k1,v1) (k2,v2) -> compare k1 k2) params
+canonicalizeResource accountName uriPath params = "/" <> accountName <> uriPath <> "\n" <> canonParams
+    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> k <> ":" <> v) $ sortBy (\(k1,v1) (k2,v2) -> compare k1 k2) params
 
 strip :: B.ByteString -> B.ByteString
 strip = f . f
