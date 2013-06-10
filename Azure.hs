@@ -19,6 +19,7 @@
 -}
 module Azure ( createContainer
              , deleteContainer
+             , listContainerRaw
 #ifndef NO_XML
              , listContainer
 #endif
@@ -89,6 +90,18 @@ deleteContainer account authKey containerName = do
     rsp <- doRequest account authKey resource [("restype", "container")] "DELETE" "" []
     return $ maybeResponseError rsp
 
+-- |List all blobs in a given container
+listContainerRaw :: B.ByteString -- ^ The account name
+              -> B.ByteString -- ^ Authorisation key
+              -> B.ByteString -- ^ Container name
+              -> IO (Either (Int, L.ByteString) L.ByteString) -- ^ Either the HTTP error code and content OR a list of Blobs
+listContainerRaw account authKey containerName = do
+    let resource = "/" +++ containerName
+    rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "list")] "GET" "" []
+    case maybeResponseError rsp of
+      Just err -> return $ Left err
+      Nothing -> return $ Right $ responseBody rsp
+
 #ifndef NO_XML
 -- |List all blobs in a given container
 listContainer :: B.ByteString -- ^ The account name
@@ -96,13 +109,10 @@ listContainer :: B.ByteString -- ^ The account name
               -> B.ByteString -- ^ Container name
               -> IO (Either (Int, L.ByteString) [Blob]) -- ^ Either the HTTP error code and content OR a list of Blobs
 listContainer account authKey containerName = do
-    let resource = "/" +++ containerName
-    rsp <- doRequest account authKey resource [("restype", "container"), ("comp", "list")] "GET" "" []
-    case maybeResponseError rsp of
-      Just err -> return $ Left err
-      Nothing -> do
-          blobs <- parse $ L8.unpack $ responseBody rsp
-          return $ Right blobs
+  res <- listContainerRaw account authKey containerName
+  case res of
+    Right raw -> fmap Right $ parse $ L8.unpack $ raw
+    Left err -> return $ Left err
 #endif
 
 -- |Set the access control on a container
