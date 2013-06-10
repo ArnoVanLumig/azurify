@@ -274,5 +274,8 @@ httpTime = fmap (B8.pack . formatTime defaultTimeLocale "%a, %d %b %Y %X GMT") g
 sign :: B.ByteString -> SignData -> B.ByteString
 sign key = B64.encode . toStrict . bytestringDigest . hmacSha256 (toLazy $ B64.decodeLenient key) . LUTF8.fromString . B8.unpack . stringToSign
 
+toLazy :: B8.ByteString -> LUTF8.ByteString
 toLazy a = L.fromChunks [a]
+
+toStrict :: LUTF8.ByteString -> B8.ByteString
 toStrict = B.concat . L.toChunks
