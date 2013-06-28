@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings, CPP #-}
-
 {-|
     Azurify is an incomplete yet sort-of-functional library and command line client to access the Azure Blob Storage API
 
@@ -59,6 +57,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Digest.Pure.SHA (hmacSha256, bytestringDigest)
 import qualified Data.ByteString.Base64 as B64
 
+maybeResponseError :: Response t -> Maybe (Int, t)
 maybeResponseError rsp = let status = (responseStatus rsp) in
     if statusCode status >= 300 || statusCode status < 200
                then Just (statusCode status, responseBody rsp)
@@ -227,7 +226,7 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
 
 encodeParams :: [(B.ByteString, B.ByteString)] -> B.ByteString
 encodeParams [] = ""
-encodeParams ((k,v):ps) = "?" <> k <> "=" <> v <> encodeRest ps
+encodeParams ((k1,v1):ps) = "?" <> k1 <> "=" <> v1 <> encodeRest ps
     where encodeRest = B.concat . map (\(k,v) -> "&" <> k <> "=" <> v)
 
 canonicalizeHeaders :: [Header] -> B.ByteString
@@ -239,7 +238,7 @@ canonicalizeHeaders headers = B.intercalate "\n" unfoldHeaders
 
 canonicalizeResource :: B.ByteString -> B.ByteString -> [(B.ByteString, B.ByteString)] -> B.ByteString
 canonicalizeResource accountName uriPath params = "/" <> accountName <> uriPath <> "\n" <> canonParams
-    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> k <> ":" <> v) $ sortBy (\(k1,v1) (k2,v2) -> compare k1 k2) params
+    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> k <> ":" <> v) $ sortBy (\(k1,_) (k2,_) -> compare k1 k2) params
 
 strip :: B.ByteString -> B.ByteString
 strip = f . f
@@ -261,11 +260,12 @@ data SignData = SignData { verb :: B.ByteString
                          , canonicalizedResource :: B.ByteString
                          }
 
+defaultSignData :: SignData
 defaultSignData = SignData undefined "" "" "" "" "" "" "" "" "" "" "" undefined undefined
 
 stringToSign :: SignData -> B.ByteString
-stringToSign (SignData verb ce clan clen cmd5 ct date ifMod ifMatch ifNMatch ifUnmod range canonHeaders canonResource) =
-    strip $ B.intercalate "\n" [verb, ce, clan, clen, cmd5, ct, date, ifMod, ifMatch, ifNMatch, ifUnmod, range, canonHeaders, canonResource]
+stringToSign SignData {..} =
+    strip $ B.intercalate "\n" [verb, contentEncoding, contentLanguage, contentLength, contentMD5, contentType, date, ifModifiedSince, ifMatch, ifNoneMatch, ifUnmodifiedSince, range, canonicalizedHeaders, canonicalizedResource]
 
 httpTime :: IO B.ByteString
 httpTime = fmap (B8.pack . formatTime defaultTimeLocale "%a, %d %b %Y %X GMT") getCurrentTime
