@@ -15,7 +15,7 @@ data CommonBlobSettings = BlobSettings {
                          , blobSettingsContentMD5 :: Maybe B.ByteString
                          , blobSettingsCacheControl :: Maybe B.ByteString
                          , blobSettingsMetaData :: [(Text, Text)]
-                         }
+                         } deriving Show
 
 instance Default CommonBlobSettings where
   def = BlobSettings Nothing Nothing Nothing Nothing Nothing []
@@ -29,6 +29,7 @@ data BlobSettings =
                           , pageBlobContentLength :: Integer
                           , pageBlobSettings :: CommonBlobSettings
                           }
+      deriving Show
 
 data BlobType = PageBlob | BlockBlob deriving (Show)
 data Blob = Blob { blobName :: B.ByteString
