@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, CPP, DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Main where
 
@@ -18,29 +18,36 @@ data Commands = UploadBlob { uploadBlobPath :: String
                            , uploadBlobContentEncoding :: Maybe String
                            , uploadBlobContentLanguage :: Maybe String
                            , uploadBlobContentCache :: Maybe String
+                           , accessKey :: String
                            }
               | DeleteBlob { deleteBlobStorageName :: String
                            , deleteBlobContainerName :: String
                            , deleteBlobBlobName :: String
+                           , accessKey :: String
                            }
               | DownloadBlob { downloadBlobStorageName :: String
                              , downloadBlobContainerName :: String
                              , downloadBlobBlobName :: String
+                             , accessKey :: String
                              }
               | CreateContainer { createContainerStorageName :: String
                                 , createContainerContainerName :: String
                                 , createContainerACL :: Maybe String
+                                , accessKey :: String
                                 }
               | DeleteContainer { deleteContainerStorageName :: String
                                 , deleteContainerContainerName :: String
                                 , deleteContainerForce :: Maybe Bool
+                                , accessKey :: String
                                 }
               | ListContainer { listContainerStorageName :: String
                               , listContainerContainerName :: String
+                              , accessKey :: String
                               }
               | BreakBlobLease { breakLeaseStorageName :: String
                                , breakLeaseContainerName :: String
                                , breakLeaseBlobName :: String
+                               , accessKey :: String
                                }
               deriving (Show, Data, Typeable, Eq)
 
@@ -52,38 +59,45 @@ uploadBlob = UploadBlob { uploadBlobPath          = def &= typ "file" &= argPos 
                         , uploadBlobContentEncoding = def &= name "contentencoding"
                         , uploadBlobContentLanguage = def &= name "contentlanguage"
                         , uploadBlobContentCache  = def &= name "cachecontrol"
+                        , accessKey = def &= name "accesskey"
                         } &= help "Upload a blob"
 
 downloadBlob = DownloadBlob { downloadBlobStorageName = def &= typ "accountname" &= argPos 0
                             , downloadBlobContainerName = def &= typ "containername" &= argPos 1
                             , downloadBlobBlobName = def &= typ "blobname" &= argPos 2
+                            , accessKey = def &= name "accesskey"
                             } &= help "Download a blob"
 
 deleteBlob = DeleteBlob { deleteBlobStorageName = def &= typ "accountname" &= argPos 0
                         , deleteBlobContainerName = def &= typ "containername" &= argPos 1
                         , deleteBlobBlobName = def &= typ "blobname" &= argPos 2
+                        , accessKey = def &= name "accesskey"
                         } &= help "Delete a blob"
 
 breakBlobLease = BreakBlobLease { breakLeaseStorageName = def &= typ "accountname" &= argPos 0
                                 , breakLeaseContainerName = def &= typ "containername" &= argPos 1
                                 , breakLeaseBlobName = def &= typ "blobname" &= argPos 2
+                                , accessKey = def &= name "accesskey"
                                 }
 
 #ifndef NO_XML
 listContainer = ListContainer { listContainerStorageName = def &= typ "accountname" &= argPos 0
                               , listContainerContainerName = def &= typ "containername" &= argPos 1
+                              , accessKey = def &= name "accesskey"
                               } &= help "List all blobs in a container"
 #endif
 
 createContainer = CreateContainer { createContainerStorageName = def &= typ "accountname" &= argPos 0
                                   , createContainerContainerName = def &= typ "containername" &= argPos 1
                                   , createContainerACL = def &= typ "blobpublic|containerpublic|private" &= argPos 2
+                                  , accessKey = def &= name "accesskey"
                                   } &= help "Create a container with the specified access control"
 
 #ifndef NO_XML
 deleteContainer = DeleteContainer { deleteContainerStorageName = def &= typ "accountname" &= argPos 0
                                   , deleteContainerContainerName = def &= typ "containername" &= argPos 1
                                   , deleteContainerForce = def &= name "force"
+                                  , accessKey = def &= name "accesskey"
                                   } &= help "Delete the container and all the blobs inside it"
 #endif
 
@@ -100,12 +114,10 @@ mode = cmdArgsMode $ modes [uploadBlob, downloadBlob, deleteBlob, breakBlobLease
 main :: IO ()
 main = do
     m <- cmdArgsRun mode
-    putStrLn "Please enter your authkey:"
-    azureKey <- B.getLine
     case m of
-        UploadBlob path account container name contType contEnc contLang contCache -> do
+        UploadBlob path account container name contType contEnc contLang contCache azureKey -> do
             contents <- B.readFile path
-            res <- Az.createBlob (B8.pack account) azureKey (B8.pack container) $
+            res <- Az.createBlob (B8.pack account) (B8.pack azureKey) (B8.pack container) $
                        Az.BlockBlobSettings (B8.pack name) contents $
                          Az.BlobSettings
                             (B8.pack `fmap` contType)
@@ -117,32 +129,32 @@ main = do
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Nothing -> return ()
-        DownloadBlob account container blobname -> do -- TODO: progress indicator
+        DownloadBlob account container blobname azureKey -> do -- TODO: progress indicator
             pwd <- getCurrentDirectory
-            res <- Az.getBlob (B8.pack account) azureKey (B8.pack container) (B8.pack blobname)
+            res <- Az.getBlob (B8.pack account) (B8.pack azureKey) (B8.pack container) (B8.pack blobname)
             let path = pwd ++ "/" ++ blobname
             putStrLn path
             case res of
                 Left (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Right content -> L.writeFile path content
-        DeleteBlob account container blobname -> do
-            res <- Az.deleteBlob (B8.pack account) azureKey (B8.pack container) (B8.pack blobname)
+        DeleteBlob account container blobname azureKey -> do
+            res <- Az.deleteBlob (B8.pack account) (B8.pack azureKey) (B8.pack container) (B8.pack blobname)
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 _ -> return ()
-        BreakBlobLease account container blobname -> do
-            res <- Az.breakLease (B8.pack account) azureKey (B8.pack container) (B8.pack blobname)
+        BreakBlobLease account container blobname azureKey -> do
+            res <- Az.breakLease (B8.pack account) (B8.pack azureKey) (B8.pack container) (B8.pack blobname)
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 _ -> return ()
 #ifndef NO_XML
-        ListContainer account container -> do -- TODO: output formatting
-            res <- Az.listContainer (B8.pack account) azureKey (B8.pack container)
+        ListContainer account container azureKey -> do -- TODO: output formatting
+            res <- Az.listContainer (B8.pack account) (B8.pack azureKey) (B8.pack container)
             case res of
                 Left (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Right blobs -> mapM_ print blobs
 #endif
-        CreateContainer account container access -> do
+        CreateContainer account container access azureKey -> do
             let acl = case access of {
                 Just "blobpublic" -> Az.BlobPublic;
                 Just "containerpublic" -> Az.ContainerPublic;
@@ -150,19 +162,19 @@ main = do
                 Nothing -> Az.Private;
                 _ -> error "invalid access control specified";
                 }
-            res <- Az.createContainer (B8.pack account) azureKey (B8.pack container) acl
+            res <- Az.createContainer (B8.pack account) (B8.pack azureKey) (B8.pack container) acl
             case res of
                 Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                 Nothing -> return ()
 #ifndef NO_XML
-        DeleteContainer account container force -> do
+        DeleteContainer account container force azureKey -> do
             if force == (Just True) then do
-                res <- Az.listContainer (B8.pack account) azureKey (B8.pack container)
+                res <- Az.listContainer (B8.pack account) (B8.pack azureKey) (B8.pack container)
                 case res of
                     Left (stat, err) -> putStrLn "error listing container" >> print stat >> putStrLn "\n" >> print err
                     Right (x:_) -> error "Container not empty, use --force to ignore"
                 else do
-                    res <- Az.deleteContainer (B8.pack account) azureKey (B8.pack container)
+                    res <- Az.deleteContainer (B8.pack account) (B8.pack azureKey) (B8.pack container)
                     case res of
                         Just (stat, err) -> putStrLn "error" >> print stat >> putStrLn "\n" >> print err
                         Nothing -> return ()
