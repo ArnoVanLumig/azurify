@@ -30,6 +30,7 @@ library
   extensions:
     OverloadedStrings
     CPP
+    RecordWildCards
 
   exposed-modules:
     Azure
@@ -70,6 +71,11 @@ executable azurify
 
   if flag(no-hxt)
       cpp-options:   -DNO_XML
+
+  extensions:
+    OverloadedStrings
+    CPP
+    RecordWildCards
 
   main-is: azurify.hs
   build-depends:
