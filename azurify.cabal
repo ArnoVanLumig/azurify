@@ -1,5 +1,5 @@
 name:                azurify
-version:             0.2.0.0
+version:             0.3.0.0
 synopsis:            A simple library for accessing Azure blob storage
 description:         An interface for a few basic functions of the Microsoft Azure blob storage. Creating and deleting containers as well as uploading, downloading and breaking leases of blobs is supported.
 homepage:            http://arnovanlumig.com/azure
@@ -44,7 +44,7 @@ library
       Azure.BlobListParser
 
   build-depends:
-    base >= 4.5,
+    base >= 4.5 && < 5,
     text,
     data-default,
     bytestring >= 0.9.2.1,
@@ -79,7 +79,7 @@ executable azurify
 
   main-is: azurify.hs
   build-depends:
-    base >= 4.5,
+    base >= 4.5 && < 5,
     text,
     data-default,
     bytestring >= 0.9.2.1,
