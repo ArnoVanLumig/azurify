@@ -1,5 +1,5 @@
 name:                azurify
-version:             0.3.0.0
+version:             0.4.0.0
 synopsis:            A simple library for accessing Azure blob storage
 description:         An interface for a few basic functions of the Microsoft Azure blob storage. Creating and deleting containers as well as uploading, downloading and breaking leases of blobs is supported.
 homepage:            http://arnovanlumig.com/azure
@@ -59,7 +59,10 @@ library
     base64-bytestring >= 0.1.2.0,
     case-insensitive >= 0.4.0.1,
     utf8-string >= 0.3.7,
-    old-locale >= 1.0.0.4
+    old-locale >= 1.0.0.4,
+    filepath,
+    unix-compat,
+    HTTP
 
   if !flag(no-hxt)
     build-depends:
@@ -96,7 +99,10 @@ executable azurify
     case-insensitive >= 0.4.0.1,
     utf8-string >= 0.3.7,
     cmdargs >= 0.10,
-    directory >= 1.1.0.2
+    directory >= 1.1.0.2,
+    filepath,
+    unix-compat,
+    HTTP
 
   if !flag(no-hxt)
     build-depends:

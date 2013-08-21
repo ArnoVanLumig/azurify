@@ -3,6 +3,7 @@ module Azure.BlobDataTypes where
 import qualified Data.ByteString as B
 import Data.Text (Text)
 import Data.Default
+import System.FilePath (FilePath)
 
 data AccessControl = ContainerPublic -- ^ the container can be enumerated and all blobs can be read by anonymous users
                    | BlobPublic      -- ^ blobs can be read by anonymous users, but the container cannot be enumerated
@@ -23,6 +24,10 @@ instance Default CommonBlobSettings where
 data BlobSettings =
         BlockBlobSettings { blockBlobName :: B.ByteString
                           , blockBlobContents :: B.ByteString
+                          , blockBlobSettings :: CommonBlobSettings
+                          }
+      | FileBlobSettings  { blockBlobName :: B.ByteString
+                          , blockBlobFile :: FilePath
                           , blockBlobSettings :: CommonBlobSettings
                           }
       | PageBlobSettings  { pageBlobName :: B.ByteString

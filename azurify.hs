@@ -9,6 +9,7 @@ import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy as L
 import System.Console.CmdArgs
 import System.Directory(getCurrentDirectory)
+import System.PosixCompat.Files (getFileStatus, fileSize)
 
 data Commands = UploadBlob { uploadBlobPath :: String
                            , uploadBlobStorageName :: String
@@ -116,10 +117,13 @@ main = do
     m <- cmdArgsRun mode
     case m of
         UploadBlob path account container name contType contEnc contLang contCache azureKey -> do
-            contents <- B.readFile path
-            res <- Az.createBlob (B8.pack account) (B8.pack azureKey) (B8.pack container) $
-                       Az.BlockBlobSettings (B8.pack name) contents $
-                         Az.BlobSettings
+            size <- fileSize `fmap` getFileStatus path
+            settings <- if size < 1028 * 1028 * 64
+              then do contents <- B.readFile path
+                      return $ Az.BlockBlobSettings (B8.pack name) contents
+              else    return $ Az.FileBlobSettings (B8.pack name) path
+            res <- Az.createBlob (B8.pack account) (B8.pack azureKey) (B8.pack container)
+                       $ settings $ Az.BlobSettings
                             (B8.pack `fmap` contType)
                             (B8.pack `fmap` contEnc)
                             (B8.pack `fmap` contLang)

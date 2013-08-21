@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 {-|
     Azurify is an incomplete yet sort-of-functional library and command line client to access the Azure Blob Storage API
 
@@ -36,7 +38,9 @@ import Azure.BlobListParser
 import Network.HTTP.Conduit
 import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
+import Network.HTTP.Base (urlEncodeVars, urlDecode)
 import System.Locale
+import System.IO (openBinaryFile, IOMode(..))
 import Data.List
 import Data.Time
 import Data.Char (isSpace)
@@ -56,6 +60,8 @@ import Control.Monad.IO.Class (liftIO)
 
 import Data.Digest.Pure.SHA (hmacSha256, bytestringDigest)
 import qualified Data.ByteString.Base64 as B64
+
+default (Int)
 
 maybeResponseError :: Response t -> Maybe (Int, t)
 maybeResponseError rsp = let status = (responseStatus rsp) in
@@ -136,38 +142,76 @@ createBlob :: B.ByteString -- ^ The account name
            -> IO (Maybe (Int, L.ByteString)) -- ^ Nothing when successful, HTTP error code and content otherwise
 createBlob account authKey containerName blobSettings =
     case blobSettings of
-      BlockBlobSettings name contents common ->
-        createBlockBlob name contents common
-      PageBlobSettings name contentLength common ->
-        createPageBlob name contentLength common
+      BlockBlobSettings name contents settings ->
+        blockBlobApi name contents settings []
+      PageBlobSettings name contentLength settings ->
+        createPageBlob name contentLength settings
+
+      FileBlobSettings name fp settings -> do
+        h <- openBinaryFile fp ReadMode
+        let doBlock i = do
+              contents <- B.hGetSome h (4 * 1048576) -- 4 MB is max size
+              if B.null contents then return $ Right (i - 1)
+                else do
+                  mrsp <- createBlockBlob name settings contents (toB64 i)
+                  case mrsp of
+                    Nothing -> doBlock (i + 1)
+                    Just rsp -> return $ Left rsp
+        result <- doBlock 1
+        case result of
+          Left err -> return $ Just err
+          Right lastBlockId -> do
+            putStrLn $ show lastBlockId ++ " blocks uploaded. Committing..."
+            createBlobApi [] name (blockListBody lastBlockId) settings [("comp", "blocklist")]
+
   where
-    createBlockBlob :: B.ByteString -> B.ByteString -> CommonBlobSettings -> IO (Maybe (Int, L.ByteString))
-    createBlockBlob name content conf = do
+    toB64 = B64.encode . B8.pack . padZeroes . show
+    -- http://gauravmantri.com/2013/05/18/windows-azure-blob-storage-dealing-with-the-specified-blob-or-block-content-is-invalid-error/
+    padZeroes s | length s > maxSize = error "azurify: too big for this hack!"
+                | otherwise = concatMap (const "0") [1 .. maxSize - length s] ++ s
+      where maxSize = 5
+
+    blockListBody :: Int -> B.ByteString
+    blockListBody lastId = "<?xml version=\"1.0\" encoding=\"utf-8\"?><BlockList>"
+                           <> commits lastId
+                           <> "</BlockList>"
+    commits :: Int -> B.ByteString
+    commits 0 = ""
+    commits i = commits (i - 1) <> "<Uncommitted>" <> toB64 i <> "</Uncommitted>"
+
+    createBlockBlob name settings contents blockId =
+      blockBlobApi name contents settings [
+          ("comp", "block"), ("blockid", blockId)
+        ]
+
+    blockBlobApi = createBlobApi [("x-ms-blob-type", "BlockBlob")]
+
+    createBlobApi :: [Header]
+            -> B.ByteString -> B.ByteString -> CommonBlobSettings
+            -> [(B.ByteString, B.ByteString)] -- ^ params
+            -> IO (Maybe (Int, L.ByteString))
+    createBlobApi headers name content conf params = do
         let resource = "/" <> containerName <> "/" <> name
-        rsp <- doRequest account authKey resource [] "PUT" content hdrs
+        rsp <- doRequest account authKey resource params "PUT" content hdrs
         return $ maybeResponseError rsp
-        where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
+      where
+        hdrs = blobHeaders conf headers
+
+    blobHeaders conf extra = (
+          map (second fromJust) $ filter (\(_,a) -> isJust a)
                     [ ("Content-Type", blobSettingsContentType conf)
                     , ("Content-Encoding", blobSettingsContentEncoding conf)
                     , ("Content-Language", blobSettingsContentLanguage conf)
                     , ("Content-MD5", blobSettingsContentMD5 conf)
                     , ("Cache-Control", blobSettingsCacheControl conf)
-                    , ("x-ms-blob-type", Just "BlockBlob") ]
+                    ]
+            ) ++ extra
 
     createPageBlob :: B.ByteString -> Integer -> CommonBlobSettings -> IO (Maybe (Int, L.ByteString))
-    createPageBlob name contentLength conf = do
-        let resource = "/" <> containerName <> "/" <> name
-        rsp <- doRequest account authKey resource [] "PUT" "" hdrs
-        return $ maybeResponseError rsp
-        where hdrs = map (second fromJust) $ filter (\(_,a) -> isJust a)
-                    [ ("Content-Type", blobSettingsContentType conf)
-                    , ("Content-Encoding", blobSettingsContentEncoding conf)
-                    , ("Content-Language", blobSettingsContentLanguage conf)
-                    , ("Content-MD5", blobSettingsContentMD5 conf)
-                    , ("Cache-Control", blobSettingsCacheControl conf)
-                    , ("x-ms-blob-type", Just "PageBlob")
-                    , ("x-ms-blob-content-length", Just $ B8.pack $ show $ contentLength)
-                    ]
+    createPageBlob name contentLength conf = createBlobApi
+            [ ("x-ms-blob-type", "PageBlob")
+            , ("x-ms-blob-content-length", B8.pack $ show $ contentLength)
+            ] name "" conf []
 
 -- |Delete a blob from a container
 deleteBlob :: B.ByteString -- ^ The account name
@@ -208,7 +252,8 @@ doRequest :: B.ByteString -> B.ByteString -> B.ByteString -> [(B.ByteString, B.B
 doRequest account authKey resource params reqType reqBody extraHeaders = do
     now <- liftIO httpTime
     withSocketsDo $ withManager $ \manager -> do
-        initReq <- parseUrl $ B8.unpack ("http://" <> account <> ".blob.core.windows.net" <> resource <> encodeParams params)
+        let url = B8.unpack ("http://" <> account <> ".blob.core.windows.net" <> resource <> encodeParams params)
+        initReq <- parseUrl url
         let headers = ("x-ms-version", "2011-08-18")
                     : ("x-ms-date", now)
                     : extraHeaders ++ requestHeaders initReq
@@ -226,8 +271,10 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
 
 encodeParams :: [(B.ByteString, B.ByteString)] -> B.ByteString
 encodeParams [] = ""
-encodeParams ((k1,v1):ps) = "?" <> k1 <> "=" <> v1 <> encodeRest ps
-    where encodeRest = B.concat . map (\(k,v) -> "&" <> k <> "=" <> v)
+encodeParams vars = ("?" <>) $ B8.pack $ urlEncodeVars $ map (\(a,b) -> (B8.unpack a, B8.unpack b)) vars
+
+liftToString :: (String -> String) -> B8.ByteString -> B8.ByteString
+liftToString f = B8.pack . f . B8.unpack
 
 canonicalizeHeaders :: [Header] -> B.ByteString
 canonicalizeHeaders headers = B.intercalate "\n" unfoldHeaders
@@ -238,7 +285,7 @@ canonicalizeHeaders headers = B.intercalate "\n" unfoldHeaders
 
 canonicalizeResource :: B.ByteString -> B.ByteString -> [(B.ByteString, B.ByteString)] -> B.ByteString
 canonicalizeResource accountName uriPath params = "/" <> accountName <> uriPath <> "\n" <> canonParams
-    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> k <> ":" <> v) $ sortBy (\(k1,_) (k2,_) -> compare k1 k2) params
+    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> liftToString urlDecode k <> ":" <> liftToString urlDecode v) $ sortBy (\(k1,_) (k2,_) -> compare k1 k2) params
 
 strip :: B.ByteString -> B.ByteString
 strip = f . f
