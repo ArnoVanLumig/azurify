@@ -10,14 +10,13 @@ The following features are implemented:
 - Creating and deleting containers
 - Listing the contents of a container
 - Downloading blobs
-- Uploading a new block blob *if it's no larger than 64MB*
+- Uploading a new block blob
+- Uploading page blobs
 - Deleting a blob
 - Breaking a blob lease
 
 The following features are *not* implemented (yet):
 - Setting container and blob metadata
-- Uploading blobs larger than 64MB
-- Uploading page blobs
 - Doing anything else with leases
 - Anything with snapshots
 - Proper error handling
