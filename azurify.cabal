@@ -1,12 +1,12 @@
 name:                azurify
-version:             0.4.0.0
+version:             0.4.0.1
 synopsis:            A simple library for accessing Azure blob storage
 description:         An interface for a few basic functions of the Microsoft Azure blob storage. Creating and deleting containers as well as uploading, downloading and breaking leases of blobs is supported.
 homepage:            http://arnovanlumig.com/azure
 license:             BSD3
 license-file:        LICENSE
 author:              Arno van Lumig
-maintainer:          arno@vanlumig.com
+maintainer:          Greg Weber <greg@gregweber.info>, arno@vanlumig.com
 category:            Development
 build-type:          Simple
 cabal-version:       >=1.8
