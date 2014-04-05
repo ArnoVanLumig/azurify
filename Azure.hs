@@ -45,7 +45,7 @@ import Data.List
 import Data.Time
 import Data.Char (isSpace)
 import Data.CaseInsensitive (foldedCase)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust, isJust, listToMaybe, fromMaybe)
 import Network (withSocketsDo)
 
 import qualified Data.ByteString as B
@@ -257,10 +257,22 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
         let headers = ("x-ms-version", "2011-08-18")
                     : ("x-ms-date", now)
                     : extraHeaders ++ requestHeaders initReq
+        let getHeader hdr = listToMaybe $ map snd $ filter (\(a,b) -> a == hdr) headers
         let signData = defaultSignData { verb = reqType
                                        , contentLength = if reqType `elem` ["PUT", "DELETE"] || not (B.null reqBody) then B8.pack $ show $ B.length reqBody else ""
                                        , canonicalizedHeaders = canonicalizeHeaders headers
-                                       , canonicalizedResource = canonicalizeResource account resource params }
+                                       , canonicalizedResource = canonicalizeResource account resource params
+                                       , contentType = fromMaybe "" $ getHeader "Content-Type"
+                                       , contentEncoding = fromMaybe "" $ getHeader "Content-Encoding"
+                                       , contentLanguage = fromMaybe "" $ getHeader "Content-Language"
+                                       , contentMD5 = fromMaybe "" $ getHeader "Content-MD5"
+                                       , date = ""
+                                       , ifModifiedSince = fromMaybe "" $ getHeader "If-Modified-Since"
+                                       , ifMatch = fromMaybe "" $ getHeader "If-Match"
+                                       , ifNoneMatch = fromMaybe "" $ getHeader "If-None-Match"
+                                       , ifUnmodifiedSince = fromMaybe "" $ getHeader "If-Unmodified-Since"
+                                       , range = fromMaybe "" $ getHeader "Range"
+                                       }
         let signature = sign authKey signData
         let authHeader = ("Authorization", "SharedKey " <> account <> ":" <> signature)
         let request = initReq { method = reqType
