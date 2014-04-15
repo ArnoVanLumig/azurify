@@ -60,7 +60,6 @@ library
     case-insensitive >= 0.4.0.1,
     utf8-string >= 0.3.7,
     old-locale >= 1.0.0.4,
-    filepath,
     unix-compat
 
   if !flag(no-hxt)
@@ -101,7 +100,6 @@ executable azurify
     utf8-string >= 0.3.7,
     cmdargs >= 0.10,
     directory >= 1.1.0.2,
-    filepath,
     unix-compat
 
   if !flag(no-hxt)

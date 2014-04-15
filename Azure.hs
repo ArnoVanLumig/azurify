@@ -258,7 +258,7 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
         let headers = ("x-ms-version", "2011-08-18")
                     : ("x-ms-date", now)
                     : extraHeaders ++ requestHeaders initReq
-        let getHeader hdr = listToMaybe $ map snd $ filter (\(a,b) -> a == hdr) headers
+        let getHeader hdr = listToMaybe $ map snd $ filter (\(a,_) -> a == hdr) headers
         let signData = defaultSignData { verb = reqType
                                        , contentLength = if reqType `elem` ["PUT", "DELETE"] || not (B.null reqBody) then B8.pack $ show $ B.length reqBody else ""
                                        , canonicalizedHeaders = canonicalizeHeaders headers
@@ -284,9 +284,6 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
 
 encodeParams :: [(B.ByteString, B.ByteString)] -> B.ByteString
 encodeParams = renderQuery True . simpleQueryToQuery
-
-liftToString :: (String -> String) -> B8.ByteString -> B8.ByteString
-liftToString f = B8.pack . f . B8.unpack
 
 canonicalizeHeaders :: [Header] -> B.ByteString
 canonicalizeHeaders headers = B.intercalate "\n" unfoldHeaders
