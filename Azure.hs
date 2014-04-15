@@ -36,9 +36,9 @@ import Azure.BlobListParser
 #endif
 
 import Network.HTTP.Conduit
+import Network.HTTP.Types (urlDecode, renderQuery, simpleQueryToQuery)
 import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
-import Network.HTTP.Base (urlEncodeVars, urlDecode)
 import System.Locale
 import System.IO (openBinaryFile, IOMode(..))
 import Data.List
@@ -46,6 +46,7 @@ import Data.Time
 import Data.Char (isSpace)
 import Data.CaseInsensitive (foldedCase)
 import Data.Maybe (fromJust, isJust)
+import Data.Ord (comparing)
 import Network (withSocketsDo)
 
 import qualified Data.ByteString as B
@@ -270,8 +271,7 @@ doRequest account authKey resource params reqType reqBody extraHeaders = do
         httpLbs request manager
 
 encodeParams :: [(B.ByteString, B.ByteString)] -> B.ByteString
-encodeParams [] = ""
-encodeParams vars = ("?" <>) $ B8.pack $ urlEncodeVars $ map (\(a,b) -> (B8.unpack a, B8.unpack b)) vars
+encodeParams = renderQuery True . simpleQueryToQuery
 
 liftToString :: (String -> String) -> B8.ByteString -> B8.ByteString
 liftToString f = B8.pack . f . B8.unpack
@@ -285,7 +285,7 @@ canonicalizeHeaders headers = B.intercalate "\n" unfoldHeaders
 
 canonicalizeResource :: B.ByteString -> B.ByteString -> [(B.ByteString, B.ByteString)] -> B.ByteString
 canonicalizeResource accountName uriPath params = "/" <> accountName <> uriPath <> "\n" <> canonParams
-    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> liftToString urlDecode k <> ":" <> liftToString urlDecode v) $ sortBy (\(k1,_) (k2,_) -> compare k1 k2) params
+    where canonParams = strip $ B.intercalate "\n" $ map (\(k,v) -> (urlDecode True) k <> ":" <> (urlDecode True v)) $ sortBy (comparing fst) params
 
 strip :: B.ByteString -> B.ByteString
 strip = f . f

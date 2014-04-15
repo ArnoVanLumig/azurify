@@ -61,8 +61,7 @@ library
     utf8-string >= 0.3.7,
     old-locale >= 1.0.0.4,
     filepath,
-    unix-compat,
-    HTTP
+    unix-compat
 
   if !flag(no-hxt)
     build-depends:
@@ -75,6 +74,8 @@ executable azurify
   if flag(no-hxt)
       cpp-options:   -DNO_XML
 
+  ghc-options: -O2 -rtsopts
+  -- ld-options: -static -pthread
   extensions:
     OverloadedStrings
     CPP
@@ -101,8 +102,7 @@ executable azurify
     cmdargs >= 0.10,
     directory >= 1.1.0.2,
     filepath,
-    unix-compat,
-    HTTP
+    unix-compat
 
   if !flag(no-hxt)
     build-depends:
