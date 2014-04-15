@@ -16,7 +16,6 @@ The following features are implemented:
 - Breaking a blob lease
 
 The following features are *not* implemented (yet):
-- Setting container and blob metadata
 - Doing anything else with leases
 - Anything with snapshots
 - Proper error handling
