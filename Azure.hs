@@ -252,35 +252,36 @@ breakLease account authKey containerName blobName = do
 doRequest :: B.ByteString -> B.ByteString -> B.ByteString -> [(B.ByteString, B.ByteString)] -> B.ByteString -> B.ByteString -> [Header] -> IO (Response L.ByteString)
 doRequest account authKey resource params reqType reqBody extraHeaders = do
     now <- liftIO httpTime
-    withSocketsDo $ withManager $ \manager -> do
-        let url = B8.unpack ("http://" <> account <> ".blob.core.windows.net" <> resource <> encodeParams params)
-        initReq <- parseUrl url
-        let headers = ("x-ms-version", "2011-08-18")
-                    : ("x-ms-date", now)
-                    : extraHeaders ++ requestHeaders initReq
-        let getHeader hdr = listToMaybe $ map snd $ filter (\(a,_) -> a == hdr) headers
-        let signData = defaultSignData { verb = reqType
-                                       , contentLength = if reqType `elem` ["PUT", "DELETE"] || not (B.null reqBody) then B8.pack $ show $ B.length reqBody else ""
-                                       , canonicalizedHeaders = canonicalizeHeaders headers
-                                       , canonicalizedResource = canonicalizeResource account resource params
-                                       , contentType = fromMaybe "" $ getHeader "Content-Type"
-                                       , contentEncoding = fromMaybe "" $ getHeader "Content-Encoding"
-                                       , contentLanguage = fromMaybe "" $ getHeader "Content-Language"
-                                       , contentMD5 = fromMaybe "" $ getHeader "Content-MD5"
-                                       , date = ""
-                                       , ifModifiedSince = fromMaybe "" $ getHeader "If-Modified-Since"
-                                       , ifMatch = fromMaybe "" $ getHeader "If-Match"
-                                       , ifNoneMatch = fromMaybe "" $ getHeader "If-None-Match"
-                                       , ifUnmodifiedSince = fromMaybe "" $ getHeader "If-Unmodified-Since"
-                                       , range = fromMaybe "" $ getHeader "Range"
-                                       }
-        let signature = sign authKey signData
-        let authHeader = ("Authorization", "SharedKey " <> account <> ":" <> signature)
-        let request = initReq { method = reqType
-                              , requestHeaders = authHeader : headers
-                              , checkStatus = \_ _ _ -> Nothing -- don't throw an exception when a non-2xx error code is received
-                              , requestBody = RequestBodyBS reqBody }
-        httpLbs request manager
+    let url = B8.unpack ("http://" <> account <> ".blob.core.windows.net" <> resource <> encodeParams params)
+    initReq <- parseUrl url
+
+    let headers = ("x-ms-version", "2011-08-18")
+                : ("x-ms-date", now)
+                : extraHeaders ++ requestHeaders initReq
+    let getHeader hdr = listToMaybe $ map snd $ filter (\(a,_) -> a == hdr) headers
+    let signData = defaultSignData { verb = reqType
+                                   , contentLength = if reqType `elem` ["PUT", "DELETE"] || not (B.null reqBody) then B8.pack $ show $ B.length reqBody else ""
+                                   , canonicalizedHeaders = canonicalizeHeaders headers
+                                   , canonicalizedResource = canonicalizeResource account resource params
+                                   , contentType = fromMaybe "" $ getHeader "Content-Type"
+                                   , contentEncoding = fromMaybe "" $ getHeader "Content-Encoding"
+                                   , contentLanguage = fromMaybe "" $ getHeader "Content-Language"
+                                   , contentMD5 = fromMaybe "" $ getHeader "Content-MD5"
+                                   , date = ""
+                                   , ifModifiedSince = fromMaybe "" $ getHeader "If-Modified-Since"
+                                   , ifMatch = fromMaybe "" $ getHeader "If-Match"
+                                   , ifNoneMatch = fromMaybe "" $ getHeader "If-None-Match"
+                                   , ifUnmodifiedSince = fromMaybe "" $ getHeader "If-Unmodified-Since"
+                                   , range = fromMaybe "" $ getHeader "Range"
+                                   }
+    let signature = sign authKey signData
+    let authHeader = ("Authorization", "SharedKey " <> account <> ":" <> signature)
+    let request = initReq { method = reqType
+                          , requestHeaders = authHeader : headers
+                          , checkStatus = \_ _ _ -> Nothing -- don't throw an exception when a non-2xx error code is received
+                          , requestBody = RequestBodyBS reqBody }
+
+    withSocketsDo $ withManager $ \manager -> httpLbs request manager
 
 encodeParams :: [(B.ByteString, B.ByteString)] -> B.ByteString
 encodeParams = renderQuery True . simpleQueryToQuery
