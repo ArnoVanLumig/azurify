@@ -5,10 +5,12 @@ module Azure.BlobListParser where
 import Azure.BlobDataTypes
 
 import qualified Data.ByteString.Char8 as B8
+import Data.String.Unicode
 import Text.XML.HXT.Core hiding (Blob)
 
 parse :: String -> IO [Blob]
-parse xml = runX (readString [] xml >>> getBlobs >>> xmlBlob)
+parse xml = runX (readString [] unicodeXml >>> getBlobs >>> xmlBlob)
+        where unicodeXml = fst $ utf8ToUnicode xml
 
 getBlobs :: (ArrowXml a) => a XmlTree XmlTree
 getBlobs = deep (hasName "Blob")
